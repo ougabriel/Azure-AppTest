@@ -1,0 +1,70 @@
+trigger:
+  - main
+
+variables:
+  ACR_NAME: 'myacr'                 # Your Azure Container Registry name
+  ACR_REPO_NAME: 'alarm-clock-app'  # Repository name in ACR
+  APP_SERVICE_NAME: 'alarm-clock'   # Your Azure App Service name
+
+jobs:
+- job: BuildAndPush
+  displayName: 'Build and Push Docker Image'
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  
+  # Step 1: Login to Azure Container Registry (ACR)
+  - task: Docker@2
+    displayName: 'Login to Azure ACR'
+    inputs:
+      command: login
+      containerRegistry: 'acr-service-connection'  # Use service connection name here
+
+  # Step 2: Generate image tags
+  - script: |
+      echo "##vso[task.setvariable variable=BUILD_TAG;isOutput=true]$(Build.BuildId)"
+      echo "##vso[task.setvariable variable=LATEST_TAG;isOutput=true]latest"
+    name: SetImageVersion
+    displayName: 'Generate Image Tags'
+
+  # Step 3: Build Docker Image
+  - task: Docker@2
+    displayName: 'Build Docker Image'
+    inputs:
+      command: build
+      repository: $(ACR_REPO_NAME)
+      dockerfile: '**/Dockerfile'
+      tags: |
+        $(Build.BuildId)
+        latest
+      containerRegistry: 'acr-service-connection'
+
+  # Step 4: Push Docker Image to ACR
+  - task: Docker@2
+    displayName: 'Push Docker Image'
+    inputs:
+      command: push
+      repository: $(ACR_REPO_NAME)
+      tags: |
+        $(Build.BuildId)
+        latest
+      containerRegistry: 'acr-service-connection'
+
+- job: Deploy
+  dependsOn: BuildAndPush
+  variables:
+    BUILD_TAG: $[ dependencies.BuildAndPush.outputs['SetImageVersion.BUILD_TAG'] ]
+  displayName: 'Deploy to App Service'
+  pool:
+    vmImage: 'ubuntu-latest'
+  steps:
+  
+  # Step 5: Deploy to Azure App Service
+  - task: AzureWebAppContainer@1
+    displayName: 'Deploy Container to App Service'
+    inputs:
+      azureSubscription: 'azure-service-connection'  # Azure service connection name
+      appName: $(APP_SERVICE_NAME)
+      containers: $(ACR_NAME).azurecr.io/$(ACR_REPO_NAME):$(BUILD_TAG)
+      appSettings: |
+        -WEBSITES_PORT=8000 
