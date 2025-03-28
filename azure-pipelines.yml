@@ -10,7 +10,9 @@ jobs:
 - job: BuildAndPush
   displayName: 'Build and Push Docker Image'
   pool:
-    vmImage: 'ubuntu-latest'
+    name: 'damiPool'
+    demands:
+    - Agent.Name -equals damiAgent
   steps:
   
   # Step 1: Login to Azure Container Registry (ACR)
@@ -18,12 +20,12 @@ jobs:
     displayName: 'Login to Azure ACR'
     inputs:
       command: login
-      containerRegistry: 'acr-service-connection'  # Use service connection name here
+      containerRegistry: 'acr-service-connection'
 
   # Step 2: Generate image tags
-  - script: |
-      echo "##vso[task.setvariable variable=BUILD_TAG;isOutput=true]$(Build.BuildId)"
-      echo "##vso[task.setvariable variable=LATEST_TAG;isOutput=true]latest"
+  - powershell: |
+      Write-Host "##vso[task.setvariable variable=BUILD_TAG;isOutput=true]$(Build.BuildId)"
+      Write-Host "##vso[task.setvariable variable=LATEST_TAG;isOutput=true]latest"
     name: SetImageVersion
     displayName: 'Generate Image Tags'
 
@@ -56,14 +58,16 @@ jobs:
     BUILD_TAG: $[ dependencies.BuildAndPush.outputs['SetImageVersion.BUILD_TAG'] ]
   displayName: 'Deploy to App Service'
   pool:
-    vmImage: 'ubuntu-latest'
+    name: 'damiPool'
+    demands:
+    - Agent.Name -equals damiAgent
   steps:
   
   # Step 5: Deploy to Azure App Service
   - task: AzureWebAppContainer@1
     displayName: 'Deploy Container to App Service'
     inputs:
-      azureSubscription: 'azure-service-connection'  # Azure service connection name
+      azureSubscription: 'azure-service-connection'
       appName: $(APP_SERVICE_NAME)
       containers: $(ACR_NAME).azurecr.io/$(ACR_REPO_NAME):$(BUILD_TAG)
       appSettings: |
